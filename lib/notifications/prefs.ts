@@ -101,6 +101,7 @@ const PREFS_DO_SERVIDOR: NotifyPrefs = {
   lead_won: { in_app: true, push: true },
   lead_lost: { in_app: true, push: true },
   mention: { in_app: true, push: true },
+  handoff: { in_app: true, push: true },
 };
 
 /**
