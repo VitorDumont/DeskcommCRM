@@ -22,6 +22,7 @@ import { extrairAtribuicaoWaha } from "@/lib/waha/atribuicao-de-anuncio";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { ackToStatus } from "@/lib/types/messaging";
 import type { WahaEnvelope, WahaPayload } from "@/lib/waha/envelope";
+import { getWahaClient } from "@/lib/waha/client";
 import { bareWaMessageId, chatIdFromWaMessageId } from "@/lib/waha/message-id";
 import { logger } from "@/lib/logger";
 
@@ -1062,6 +1063,43 @@ async function handleMessageRevoked(
  * Roteador único de eventos WAHA. Os dois route handlers convergem aqui após
  * resolver a sessão e validar HMAC.
  */
+/**
+ * Os dois tiques azuis no aparelho de quem escreveu.
+ *
+ * ─── Por que aqui, e não no envio ─────────────────────────────────────────
+ *
+ * A primeira versão marcava dentro de `wahaAdapter.send()`, logo antes de
+ * responder — parecia o lugar óbvio ("abre, lê, responde"). Dois invariantes
+ * reprovaram, e com razão: `adapter.send` é uma operação que o sistema trata
+ * como atômica e CONTADA — tem ledger, idempotência e uma sonda que verifica
+ * "não repetiu POST". Um POST de cortesia ali entra na contagem de envios e
+ * some com a distinção entre "mandou uma vez" e "mandou duas", que é
+ * exatamente o que aquela sonda existe para medir.
+ *
+ * A ingestão não tem ledger nem contagem, e é onde a afirmação nasce
+ * verdadeira: a mensagem chegou e o sistema a leu. Vale inclusive quando o
+ * turno é adiado pela janela anti-ban — lida ela foi; respondida é outra
+ * pergunta, e quem a responde é o envio.
+ *
+ * Grupo fica de fora: o CRM não faz binding de grupo (`@g.us` é pulado na
+ * ingestão), e marcar como lido um chat que ele não atende seria afirmar um
+ * atendimento que não existe.
+ *
+ * Nunca lança — `sendSeen` já engole o próprio erro. O `catch` aqui é o segundo
+ * cinto: nada nesta linha pode derrubar a ingestão da mensagem do cliente.
+ */
+async function marcarComoLida(sessionName: string, p: WahaPayload): Promise<void> {
+  try {
+    const chatId = typeof p.from === "string" ? p.from : null;
+    if (!chatId || chatId.endsWith("@g.us")) return;
+    const client = getWahaClient();
+    if (!client) return;
+    await client.sendSeen(sessionName, chatId, typeof p.id === "string" ? p.id : null);
+  } catch {
+    /* cortesia não derruba ingestão */
+  }
+}
+
 export async function dispatchWahaEvent(
   admin: Admin,
   session: SessionStatusRow,
@@ -1076,6 +1114,7 @@ export async function dispatchWahaEvent(
       await handleOutboundFromUserPhone(admin, session, payload, requestId);
     } else {
       await handleInbound(admin, session, payload, requestId);
+      await marcarComoLida(envelope.session, payload);
     }
   } else if (eventType === "message.ack") {
     await handleAck(admin, session, payload);

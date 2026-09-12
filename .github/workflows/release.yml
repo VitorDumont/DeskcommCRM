@@ -33,11 +33,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      # `write` porque o degrau 3 (GITHUB_TOKEN) empurra a branch de release e
-      # abre o PR com ESTE token. Nos degraus 1 e 2 quem empurra é o App/PAT, e
-      # o alcance deles não vem daqui.
-      contents: write
-      pull-requests: write
+      # Continua `read`, e é deliberado: `tests/unit/tag-so-nasce-da-main.test.ts`
+      # proíbe escrita pelo GITHUB_TOKEN aqui. Quem escreve é o App ou o PAT, e o
+      # alcance deles não vem deste bloco.
+      contents: read
     # `secrets` NÃO é um contexto válido dentro de `if:` de step — o Actions
     # recusa o arquivo inteiro com "Unrecognized named-value: 'secrets'", e o
     # run falha antes de qualquer job, aparecendo com o NOME DO ARQUIVO no lugar
@@ -60,10 +59,16 @@ jobs:
       #   1. GitHub App  — o de origem. Empurra E dispara os workflows seguintes.
       #   2. PAT         — `secrets.RELEASE_TOKEN`, para quem mantém um fork.
       #                    Também dispara os workflows seguintes.
-      #   3. GITHUB_TOKEN — sempre existe, nunca falha. Empurra, mas NÃO dispara
-      #                    outro workflow (regra do GitHub, para não criar laço).
-      #                    O degrau 3 compensa isso disparando `publish-image`
-      #                    explicitamente, e diz no resumo o que fica de fora.
+      #   3. GITHUB_TOKEN — sempre existe, nunca falha. Serve para LER: todo push
+      #                    na `main` passa por aqui só para responder "este push
+      #                    foi um corte de release?", e a resposta quase sempre é
+      #                    não. ESCREVER com ele é proibido por
+      #                    `tests/unit/tag-so-nasce-da-main.test.ts`, e a razão é
+      #                    boa: tag empurrada pelo GITHUB_TOKEN não dispara
+      #                    `publish-image`, então a tag existiria, nenhum erro
+      #                    apareceria, e NENHUMA VPS receberia a atualização.
+      #                    Quando há corte de verdade e falta App/PAT, o job para
+      #                    com instrução — em vez de cortar uma tag natimorta.
       - uses: actions/create-github-app-token@v3
         id: app-token
         if: env.TEM_APP == 'true'
@@ -146,8 +151,8 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      # `write`: o degrau 3 empurra a TAG com o GITHUB_TOKEN. Ver o job acima.
-      contents: write
+      # `read` — ver o job acima. O token que ESCREVE é o App/PAT.
+      contents: read
     # `secrets` NÃO é um contexto válido dentro de `if:` de step — o Actions
     # recusa o arquivo inteiro com "Unrecognized named-value: 'secrets'", e o
     # run falha antes de qualquer job, aparecendo com o NOME DO ARQUIVO no lugar
@@ -330,6 +335,25 @@ jobs:
           fi
 
       - name: Criar e empurrar a tag
+      # Cortar a tag é o único momento que EXIGE token privilegiado. Todo push
+      # comum na `main` chega até aqui só para responder "houve corte?", quase
+      # sempre responde que não, e termina verde — que é o que faz este workflow
+      # deixar de mandar e-mail vermelho a cada push num fork sem o App.
+      #
+      # Quando houve corte de verdade e não há App nem PAT, parar é o certo: uma
+      # tag empurrada pelo GITHUB_TOKEN não dispararia `publish-image`, e nasceria
+      # sem imagem nenhuma publicada — o parque instalado inteiro receberia a
+      # oferta de uma versão que não existe no registro.
+      - name: Cortar a tag exige o App ou um PAT
+        if: steps.pendente.outputs.cortar == 'sim' && steps.token.outputs.origem == 'github_token'
+        run: |
+          echo "::error::Há release para cortar, e este repositório não tem credencial que possa escrever."
+          echo "::error::Cadastre um PAT com escopo 'repo' e 'workflow' no secret RELEASE_TOKEN"
+          echo "::error::(ou os secrets RELEASE_APP_ID + RELEASE_APP_PRIVATE_KEY do GitHub App)."
+          echo "::error::A tag NÃO foi criada de propósito: empurrada pelo GITHUB_TOKEN ela não"
+          echo "::error::dispararia a publicação das imagens, e nasceria apontando para o vazio."
+          exit 1
+
         if: steps.pendente.outputs.cortar == 'sim'
         env:
           VERSAO: ${{ steps.pendente.outputs.versao }}
@@ -342,34 +366,6 @@ jobs:
           git tag -a "v${VERSAO}" -m "v${VERSAO}"
           git push origin "v${VERSAO}"
 
-      # Tag empurrada com o GITHUB_TOKEN não dispara outro workflow — é regra do
-      # GitHub, para um workflow não se realimentar sem fim. Nos degraus 1 e 2
-      # isso não acontece e este passo é pulado; no degrau 3, sem ele, a tag
-      # nasceria sem imagem nenhuma publicada, que é pior do que não cortar.
-      #
-      # O que o dispatch ALCANÇA: `publish-image` roda com `ref` na tag, então
-      # `github.ref_type` é `tag` e as três imagens saem com o NÚMERO da versão.
-      # O que ele NÃO alcança: `promover-stable` exige `github.event_name ==
-      # 'push'` (guarda deliberada, para um dispatch numa release antiga não
-      # fazer `stable` regredir), então o canal `stable` NÃO anda. Dito no
-      # resumo em vez de silenciado — e resolvido de vez com um `RELEASE_TOKEN`.
-      - name: Publicar as imagens da tag (só no degrau 3)
-        if: steps.pendente.outputs.cortar == 'sim' && steps.token.outputs.origem == 'github_token'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSAO: ${{ steps.pendente.outputs.versao }}
-        run: |
-          set -euo pipefail
-          gh workflow run publish-image.yml --repo "$GITHUB_REPOSITORY" --ref "v${VERSAO}"
-          {
-            echo "### Release v${VERSAO} cortada com o GITHUB_TOKEN"
-            echo
-            echo "As três imagens foram pedidas para a tag \`v${VERSAO}\` por disparo manual."
-            echo
-            echo "**O canal \`stable\` NÃO foi movido** — ele só anda em push de tag, e o"
-            echo "GITHUB_TOKEN não dispara workflow. Para o fluxo completo e automático,"
-            echo "cadastre um PAT com escopo \`repo\` e \`workflow\` no secret \`RELEASE_TOKEN\`."
-          } >> "$GITHUB_STEP_SUMMARY"
 
       # A tag basta para a VPS (o `agent.sh` faz `git fetch --tags`), mas não
       # para quem chega pelo GitHub: sem a release publicada, a página do

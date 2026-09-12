@@ -193,18 +193,6 @@ export const wahaAdapter: ChannelAdapter = {
 
     const to = await resolveCanonicalCusChatId(client, envelope.sessionRef, envelope.to);
 
-    // Os tiques azuis, ANTES de responder — é a ordem que um humano faz: abre,
-    // lê, responde. Sem isto (e `sendSeen` não existia no repositório), o
-    // cliente recebia resposta com a própria mensagem ainda marcada como não
-    // lida, o que lê como desatenção.
-    //
-    // Aqui, e não na ingestão, porque marcar na chegada afirmaria que alguém
-    // leu no instante em que a mensagem entrou — inclusive fora da janela
-    // anti-ban, quando o turno é ADIADO e ninguém leu coisa alguma. No ponto do
-    // envio a afirmação é verdadeira por construção: o CRM está respondendo.
-    //
-    // `sendSeen` nunca lança (ver o método): cortesia não derruba envio.
-    await client.sendSeen(envelope.sessionRef, to);
 
     // A estrutura de três caminhos é do upstream (o cartão de contato entrou
     // depois da citação). O que se enxerta aqui é o `replyToExternalId` no
