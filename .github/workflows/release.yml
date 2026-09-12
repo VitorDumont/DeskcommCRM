@@ -33,13 +33,61 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # `write` porque o degrau 3 (GITHUB_TOKEN) empurra a branch de release e
+      # abre o PR com ESTE token. Nos degraus 1 e 2 quem empurra é o App/PAT, e
+      # o alcance deles não vem daqui.
+      contents: write
+      pull-requests: write
     steps:
+      # ── O token que empurra, em três degraus ──────────────────────────────
+      #
+      # O App só existe no repositório de origem: `create-github-app-token` é
+      # incondicional e falha em 5s com "The 'client-id' ... must be set to a
+      # non-empty string" em qualquer FORK, porque `secrets.RELEASE_APP_ID` lá
+      # é vazio. Todo push na `main` de um fork produzia um e-mail de workflow
+      # vermelho, e o release inteiro era inalcançável para quem mantém o
+      # projeto a partir de um fork.
+      #
+      # Os três degraus, do melhor para o que sempre existe:
+      #   1. GitHub App  — o de origem. Empurra E dispara os workflows seguintes.
+      #   2. PAT         — `secrets.RELEASE_TOKEN`, para quem mantém um fork.
+      #                    Também dispara os workflows seguintes.
+      #   3. GITHUB_TOKEN — sempre existe, nunca falha. Empurra, mas NÃO dispara
+      #                    outro workflow (regra do GitHub, para não criar laço).
+      #                    O degrau 3 compensa isso disparando `publish-image`
+      #                    explicitamente, e diz no resumo o que fica de fora.
       - uses: actions/create-github-app-token@v3
-        id: token
+        id: app-token
+        if: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Resolver o token que empurra
+        id: token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          PAT: ${{ secrets.RELEASE_TOKEN }}
+          FALLBACK: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_TOKEN:-}" ]; then
+            escolhido="$APP_TOKEN"; origem="app"; autor="${APP_SLUG}[bot]@users.noreply.github.com"
+          elif [ -n "${PAT:-}" ]; then
+            escolhido="$PAT";       origem="pat"; autor="github-actions[bot]@users.noreply.github.com"
+          else
+            escolhido="$FALLBACK";  origem="github_token"; autor="github-actions[bot]@users.noreply.github.com"
+          fi
+          # Mascarado ANTES de virar output: o GITHUB_TOKEN já é mascarado pelo
+          # runner, o do App e o PAT passam por aqui e precisam ser marcados.
+          echo "::add-mask::$escolhido"
+          {
+            echo "token=$escolhido"
+            echo "origem=$origem"
+            echo "autor=$autor"
+          } >> "$GITHUB_OUTPUT"
+          echo "token de release: origem=$origem"
 
       - uses: actions/checkout@v7
         with:
@@ -68,7 +116,7 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name  'deskcomm-release[bot]'
-          git config user.email '${{ steps.token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git config user.email '${{ steps.token.outputs.autor }}'
           git checkout -b "release/${VERSAO}"
           git add CHANGELOG.md .changes
           git commit -m "release(${VERSAO}): a versão montada a partir dos fragmentos declarados"
@@ -90,13 +138,42 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # `write`: o degrau 3 empurra a TAG com o GITHUB_TOKEN. Ver o job acima.
+      contents: write
     steps:
+      # Mesmos três degraus do job acima — ver o comentário lá.
       - uses: actions/create-github-app-token@v3
-        id: token
+        id: app-token
+        if: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Resolver o token que empurra
+        id: token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          PAT: ${{ secrets.RELEASE_TOKEN }}
+          FALLBACK: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APP_TOKEN:-}" ]; then
+            escolhido="$APP_TOKEN"; origem="app"; autor="${APP_SLUG}[bot]@users.noreply.github.com"
+          elif [ -n "${PAT:-}" ]; then
+            escolhido="$PAT";       origem="pat"; autor="github-actions[bot]@users.noreply.github.com"
+          else
+            escolhido="$FALLBACK";  origem="github_token"; autor="github-actions[bot]@users.noreply.github.com"
+          fi
+          # Mascarado ANTES de virar output: o GITHUB_TOKEN já é mascarado pelo
+          # runner, o do App e o PAT passam por aqui e precisam ser marcados.
+          echo "::add-mask::$escolhido"
+          {
+            echo "token=$escolhido"
+            echo "origem=$origem"
+            echo "autor=$autor"
+          } >> "$GITHUB_OUTPUT"
+          echo "token de release: origem=$origem"
 
       - uses: actions/checkout@v7
         with:
@@ -243,11 +320,40 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name  'deskcomm-release[bot]'
-          git config user.email '${{ steps.token.outputs.app-slug }}[bot]@users.noreply.github.com'
+          git config user.email '${{ steps.token.outputs.autor }}'
           # Tag ANOTADA: guarda autor e data, e é o que `git describe
           # --exact-match` do agent.sh espera encontrar na VPS.
           git tag -a "v${VERSAO}" -m "v${VERSAO}"
           git push origin "v${VERSAO}"
+
+      # Tag empurrada com o GITHUB_TOKEN não dispara outro workflow — é regra do
+      # GitHub, para um workflow não se realimentar sem fim. Nos degraus 1 e 2
+      # isso não acontece e este passo é pulado; no degrau 3, sem ele, a tag
+      # nasceria sem imagem nenhuma publicada, que é pior do que não cortar.
+      #
+      # O que o dispatch ALCANÇA: `publish-image` roda com `ref` na tag, então
+      # `github.ref_type` é `tag` e as três imagens saem com o NÚMERO da versão.
+      # O que ele NÃO alcança: `promover-stable` exige `github.event_name ==
+      # 'push'` (guarda deliberada, para um dispatch numa release antiga não
+      # fazer `stable` regredir), então o canal `stable` NÃO anda. Dito no
+      # resumo em vez de silenciado — e resolvido de vez com um `RELEASE_TOKEN`.
+      - name: Publicar as imagens da tag (só no degrau 3)
+        if: steps.pendente.outputs.cortar == 'sim' && steps.token.outputs.origem == 'github_token'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSAO: ${{ steps.pendente.outputs.versao }}
+        run: |
+          set -euo pipefail
+          gh workflow run publish-image.yml --repo "$GITHUB_REPOSITORY" --ref "v${VERSAO}"
+          {
+            echo "### Release v${VERSAO} cortada com o GITHUB_TOKEN"
+            echo
+            echo "As três imagens foram pedidas para a tag \`v${VERSAO}\` por disparo manual."
+            echo
+            echo "**O canal \`stable\` NÃO foi movido** — ele só anda em push de tag, e o"
+            echo "GITHUB_TOKEN não dispara workflow. Para o fluxo completo e automático,"
+            echo "cadastre um PAT com escopo \`repo\` e \`workflow\` no secret \`RELEASE_TOKEN\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # A tag basta para a VPS (o `agent.sh` faz `git fetch --tags`), mas não
       # para quem chega pelo GitHub: sem a release publicada, a página do
