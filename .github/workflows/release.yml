@@ -38,6 +38,14 @@ jobs:
       # o alcance deles não vem daqui.
       contents: write
       pull-requests: write
+    # `secrets` NÃO é um contexto válido dentro de `if:` de step — o Actions
+    # recusa o arquivo inteiro com "Unrecognized named-value: 'secrets'", e o
+    # run falha antes de qualquer job, aparecendo com o NOME DO ARQUIVO no lugar
+    # do nome do workflow. `jobs.<id>.env` aceita `secrets`, e `env` é contexto
+    # válido em `if:` — por isso a pergunta "existe App?" é respondida aqui em
+    # cima, uma vez, e vira um booleano em texto.
+    env:
+      TEM_APP: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       # ── O token que empurra, em três degraus ──────────────────────────────
       #
@@ -58,7 +66,7 @@ jobs:
       #                    explicitamente, e diz no resumo o que fica de fora.
       - uses: actions/create-github-app-token@v3
         id: app-token
-        if: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        if: env.TEM_APP == 'true'
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -140,11 +148,19 @@ jobs:
     permissions:
       # `write`: o degrau 3 empurra a TAG com o GITHUB_TOKEN. Ver o job acima.
       contents: write
+    # `secrets` NÃO é um contexto válido dentro de `if:` de step — o Actions
+    # recusa o arquivo inteiro com "Unrecognized named-value: 'secrets'", e o
+    # run falha antes de qualquer job, aparecendo com o NOME DO ARQUIVO no lugar
+    # do nome do workflow. `jobs.<id>.env` aceita `secrets`, e `env` é contexto
+    # válido em `if:` — por isso a pergunta "existe App?" é respondida aqui em
+    # cima, uma vez, e vira um booleano em texto.
+    env:
+      TEM_APP: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
     steps:
       # Mesmos três degraus do job acima — ver o comentário lá.
       - uses: actions/create-github-app-token@v3
         id: app-token
-        if: ${{ secrets.RELEASE_APP_ID != '' && secrets.RELEASE_APP_PRIVATE_KEY != '' }}
+        if: env.TEM_APP == 'true'
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
