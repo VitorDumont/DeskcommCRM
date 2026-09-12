@@ -130,15 +130,40 @@ describe("POST .../versions/:vid/test — core compartilhado", () => {
       }),
     );
     expect(res.status).toBe(422);
-    expect(body.error).toMatchObject({
-      code: "preview_failed",
-      message: "Não foi possível executar o teste. Confira modelo, credencial e materiais do agente.",
-    });
+    expect(body.error?.code).toBe("preview_failed");
+    expect(body.error?.message).toContain("Não foi possível executar o teste.");
+    // O nome da variável de ambiente continua fora da tela — é infraestrutura do
+    // servidor. O que mudou é que o resto do motivo passa a chegar.
     expect(body.error?.message).not.toContain("AI_GATEWAY_API_KEY");
+    expect(body.error?.message).toContain("[redigido]");
     expect(atualizacoes).toContainEqual(expect.objectContaining({
       status: "error",
       error_code: "preview_failed",
     }));
+  });
+  it("o motivo do provedor chega à tela em vez do conselho genérico", async () => {
+    // O caso medido em produção: um modelo `:free` da OpenRouter devolveu 429 do
+    // pool compartilhado do provedor. A tela dizia "confira modelo, credencial e
+    // materiais" — três lugares, todos errados, com a credencial boa. O motivo
+    // real só existia no log do contêiner.
+    vi.mocked(testAgentVersion).mockImplementationOnce(async () => {
+      throw new Error(
+        "Failed after 3 attempts. Last error: AI_APICallError: Provider returned error (429): google/gemma-4-31b-it:free is temporarily rate-limited upstream",
+      );
+    });
+    const { POST } = await import("./route");
+    const req = new NextRequest("http://localhost/x", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sample_message: "oi" }),
+    });
+
+    const res = await POST(req, { params: Promise.resolve({ id: AGENT, vid: VERSION }) });
+    const body = (await res.json()) as { error?: { code?: string; message?: string } };
+
+    expect(res.status).toBe(422);
+    expect(body.error?.message).toContain("rate-limited upstream");
+    expect(body.error?.message).toContain("429");
   });
 });
 

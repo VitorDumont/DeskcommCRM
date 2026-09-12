@@ -36,6 +36,38 @@ const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 type Ctx = { params: Promise<{ id: string; vid: string }> };
 
+/**
+ * O MOTIVO da falha, em vez do conselho genérico.
+ *
+ * O `catch` daqui engolia o erro e respondia sempre "Confira modelo, credencial
+ * e materiais do agente." — que manda procurar em três lugares e, quando a
+ * causa é do PROVEDOR, nos três errados. Medido em produção nesta instalação:
+ * um `:free` da OpenRouter devolveu `429 ... is temporarily rate-limited
+ * upstream` (pool compartilhado do provedor, não a chave), e a tela mandou
+ * conferir a credencial — que estava boa. Quem opera mexeu onde não devia, e o
+ * motivo real só existia no log do contêiner.
+ *
+ * Truncado em 300 e com chave redigida: a mensagem vem do provedor, e ninguém
+ * promete que ela não ecoa o que foi enviado. `sk-…`/`eyJ…` viram `[redigido]`
+ * antes de qualquer coisa chegar à tela.
+ */
+function motivoDaFalha(err: unknown): string | null {
+  const cru = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (!cru) return null;
+  const limpo = cru
+    // 1. o VALOR de uma chave, se o provedor ecoou o que recebeu.
+    .replace(/\b(sk-[A-Za-z0-9_-]{8,}|eyJ[A-Za-z0-9_.-]{16,})/g, "[redigido]")
+    // 2. o NOME da variável de ambiente. Não é segredo, mas é infraestrutura do
+    //    servidor, e a tela de quem usa o CRM não é lugar para ela — decisão que
+    //    já estava no teste desta rota (`not.toContain("AI_GATEWAY_API_KEY")`)
+    //    antes de a mensagem passar a carregar motivo nenhum.
+    .replace(/\b[A-Z][A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|DSN|CREDENTIAL)[A-Z0-9_]*\b/g, "[redigido]")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!limpo) return null;
+  return limpo.length > 300 ? `${limpo.slice(0, 300)}…` : limpo;
+}
+
 export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
   const supportDenied = await requireSupportWrite();
   if (supportDenied) return supportDenied;
@@ -135,21 +167,25 @@ export async function POST(req: NextRequest, ctx: Ctx): Promise<Response> {
       })
       .eq("organization_id", activeOrg.orgId)
       .eq("id", runRow.id);
-  } catch {
+  } catch (err) {
+    const motivo = motivoDaFalha(err);
     await admin
       .from("ai_agent_runs")
       .update({
         status: "error",
         completed_at: new Date().toISOString(),
         error_code: "preview_failed",
+        ...(motivo ? { error_message: motivo } : {}),
       })
       .eq("organization_id", activeOrg.orgId)
       .eq("id", runRow.id);
     return fail(
       "preview_failed",
-      t("Não foi possível executar o teste. Confira modelo, credencial e materiais do agente."),
+      motivo
+        ? `${t("Não foi possível executar o teste.")} ${motivo}`
+        : t("Não foi possível executar o teste. Confira modelo, credencial e materiais do agente."),
       422,
-      { requestId },
+      { requestId, ...(motivo ? { details: { motivo } } : {}) },
     );
   }
 

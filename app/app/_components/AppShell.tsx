@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { useInboundMessageAlerts } from "@/hooks/notifications/useInboundMessageAlerts";
 import { useCrmAlerts } from "@/hooks/notifications/useCrmAlerts";
+import { useHandoffAlerts } from "@/hooks/notifications/useHandoffAlerts";
 import { useNotifyOpenFromServiceWorker } from "@/lib/notifications/notify_open";
 
 interface AppShellProps {
@@ -14,6 +15,7 @@ interface AppShellProps {
 export function AppShell({ sidebarCollapsed, children }: AppShellProps) {
   useInboundMessageAlerts();
   useCrmAlerts();
+  useHandoffAlerts();
   useNotifyOpenFromServiceWorker();
   return (
     <div className="flex min-h-screen w-full bg-background">

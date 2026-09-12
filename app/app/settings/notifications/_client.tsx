@@ -23,6 +23,7 @@ const LABELS: Record<NotifyCategory, string> = {
   lead_won: "Lead ganho",
   lead_lost: "Lead perdido",
   mention: "Você foi mencionado",
+  handoff: "Conversa passada para uma pessoa",
 };
 
 export function NotificationPrefsClient() {
