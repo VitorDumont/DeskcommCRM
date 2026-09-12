@@ -334,7 +334,6 @@ jobs:
             echo "versao=${versao}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Criar e empurrar a tag
       # Cortar a tag é o único momento que EXIGE token privilegiado. Todo push
       # comum na `main` chega até aqui só para responder "houve corte?", quase
       # sempre responde que não, e termina verde — que é o que faz este workflow
@@ -354,6 +353,7 @@ jobs:
           echo "::error::dispararia a publicação das imagens, e nasceria apontando para o vazio."
           exit 1
 
+      - name: Criar e empurrar a tag
         if: steps.pendente.outputs.cortar == 'sim'
         env:
           VERSAO: ${{ steps.pendente.outputs.versao }}

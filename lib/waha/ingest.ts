@@ -1088,8 +1088,12 @@ async function handleMessageRevoked(
  * Nunca lança — `sendSeen` já engole o próprio erro. O `catch` aqui é o segundo
  * cinto: nada nesta linha pode derrubar a ingestão da mensagem do cliente.
  */
-async function marcarComoLida(sessionName: string, p: WahaPayload): Promise<void> {
+async function marcarComoLida(
+  sessionName: string | null | undefined,
+  p: WahaPayload,
+): Promise<void> {
   try {
+    if (!sessionName) return;
     const chatId = typeof p.from === "string" ? p.from : null;
     if (!chatId || chatId.endsWith("@g.us")) return;
     const client = getWahaClient();
