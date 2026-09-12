@@ -88,6 +88,13 @@ export interface ResultadoEmissao {
   convite: ConviteDeTime;
   accept_url: string;
   email_dispatched: boolean;
+  /**
+   * Por que o e-mail não saiu, quando não saiu. Vive só no retorno — não é
+   * coluna de `team_invites`, e não vale uma migration: quem precisa do motivo
+   * é a tela que acabou de pedir o convite, no mesmo segundo. O que fica no
+   * banco é `email_dispatched`, e o motivo também vai para o audit log.
+   */
+  email_error?: string | null;
   /** true = renovou uma linha pendente que já existia (reenvio). */
   renovado: boolean;
 }
@@ -164,6 +171,7 @@ export async function emitirConvite(
     convite: row as ConviteDeTime,
     accept_url: emitido.accept_url,
     email_dispatched: emitido.email_dispatched,
+    email_error: emitido.email_error,
     renovado: !!pendente,
   };
 }
@@ -223,6 +231,7 @@ export async function reenviarConvite(
     convite: row as ConviteDeTime,
     accept_url: emitido.accept_url,
     email_dispatched: emitido.email_dispatched,
+    email_error: emitido.email_error,
     renovado: true,
   };
 }

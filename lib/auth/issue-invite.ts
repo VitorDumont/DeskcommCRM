@@ -47,6 +47,13 @@ export async function issueInvite(input: {
   });
   const acceptUrl = `${env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/team/accept-invite/${token}`;
   let dispatched = false;
+  // O MOTIVO, e não só o fato. `sendEmail` já classifica a falha
+  // (`not_configured` / `dominio_nao_verificado` / `rate_limited` /
+  // `send_failed`) e o valor morria aqui, em `dispatched = result.ok`. A tela
+  // então chutava "Resend não configurado" para qualquer causa — e dizia isso
+  // a quem tinha a chave configurada e INVÁLIDA, mandando conferir o que já
+  // estava lá. Medido nesta instalação.
+  let emailError: string | null = null;
   // Falhas de infraestrutura não desfazem a organização já criada nem o link.
   if (input.dispatch !== false) {
     try {
@@ -69,8 +76,10 @@ export async function issueInvite(input: {
         ],
       });
       dispatched = result.ok;
+      if (!result.ok) emailError = result.error ?? "send_failed";
     } catch {
       /* A superfície de recuperação é o link devolvido abaixo. */
+      emailError = "send_failed";
     }
     await audit({
       action: "member.invited",
@@ -79,7 +88,7 @@ export async function issueInvite(input: {
       resourceType: "membership",
       resourceId: inviteId,
       requestId: input.requestId,
-      metadata: { email, role: input.role, email_dispatched: dispatched },
+      metadata: { email, role: input.role, email_dispatched: dispatched, email_error: emailError },
     });
   }
   return {
@@ -87,6 +96,7 @@ export async function issueInvite(input: {
     invite_id: inviteId,
     expires_at: new Date(exp * 1000).toISOString(),
     email_dispatched: dispatched,
+    email_error: emailError,
     accept_url: acceptUrl,
   };
 }

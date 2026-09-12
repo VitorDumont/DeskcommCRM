@@ -33,6 +33,8 @@ interface SentItem {
   invite_id: string;
   expires_at: string;
   email_dispatched: boolean;
+  /** Por que não saiu, quando não saiu — a tela transforma isto em instrução. */
+  email_error?: string | null;
   accept_url: string;
 }
 interface FailedItem {
@@ -95,7 +97,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
 
     if (admin) {
-      const { convite, accept_url, email_dispatched } = await emitirConvite(admin, {
+      const { convite, accept_url, email_dispatched, email_error } = await emitirConvite(admin, {
         email,
         role: inv.role,
         interfaceSettings: inv.interface_settings,
@@ -110,6 +112,7 @@ export async function POST(req: NextRequest): Promise<Response> {
         invite_id: convite.id,
         expires_at: convite.expires_at,
         email_dispatched,
+        email_error,
         accept_url,
       });
     } else {

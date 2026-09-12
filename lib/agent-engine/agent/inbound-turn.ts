@@ -35,6 +35,7 @@ import { currentExecutionBoundary, guardServiceEffect } from '@/lib/atendimento/
 import type pg from 'pg';
 import { z } from 'zod';
 import { auxModelArgs, type AuxModelArgs } from './aux-model-args';
+import { normalizarQuebrasLiterais } from './normalizar-quebras';
 import type { ChannelAdapter, ChannelSendResult } from '../channel-adapter';
 
 import { withFields, type Logger } from '../obs/logger';
@@ -2520,7 +2521,14 @@ async function executarTurnoDoAgente(
     }),
     send_message: tool({
       ...AGENT_TOOL_DEFS.send_message,
-      execute: async ({ body }) => {
+      execute: async ({ body: bodyCru }) => {
+        // O `\n` que o modelo escreveu como TEXTO vira quebra aqui, na ENTRADA,
+        // e não lá na borda do canal. O caminho inteiro depois disto lê o texto:
+        // o gate de promessa, o de vocabulário interno, a divisão em bolhas
+        // (que separa parágrafo por `/\n{2,}/` e não casava com o escape) e a
+        // linha gravada em `messages`. Normalizar na saída consertaria o que o
+        // cliente vê e deixaria o banco e os gates com a versão errada.
+        const body = normalizarQuebrasLiterais(bodyCru);
         if (claimsCurrentInboundIsEmpty(body, mensagemDoJob)) {
           falseEmptyInboundVetoCount += 1;
           if (falseEmptyInboundVetoCount < MAX_VETOS_DE_FALSO_VAZIO) {

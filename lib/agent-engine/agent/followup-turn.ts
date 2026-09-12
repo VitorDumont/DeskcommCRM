@@ -39,6 +39,7 @@ import {
   type LeadCheckpointRow,
 } from './inbound-turn';
 import { isLeadInHandoff } from './human-handoff';
+import { normalizarQuebrasLiterais } from './normalizar-quebras';
 import { fusoDaOrganizacao } from './fuso-da-org';
 import type { LeadStateRow } from './lead-state';
 import { loadReentryTemplate, pickReentryVariant } from './reentry-template';
@@ -601,7 +602,9 @@ async function sendFixedOutbound(
             ),
         }
       : {}),
-    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, jobClaim:claimOfJob(job), seq: 1, conversationId, body: finalBody }),
+    // Mesmo tratamento do turno de entrada: o followup também nasce de texto de
+    // modelo, e o escape literal chega igual por aqui.
+    send: (finalBody) => channel.send({ tenantId, leadId, jobId: job.id, jobClaim:claimOfJob(job), seq: 1, conversationId, body: normalizarQuebrasLiterais(finalBody) }),
   });
 
   if (chain.status === 'vetoed') {

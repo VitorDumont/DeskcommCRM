@@ -789,6 +789,21 @@ export const DICIONARIO: Traducoes = {
   Modelo: { es: "Modelo" },
   "Selecione um modelo": { es: "Selecciona un modelo" },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
+  "E-mail não enviado: falta configurar RESEND_API_KEY e RESEND_FROM_EMAIL. Use o link abaixo.": {
+    es: "Correo no enviado: falta configurar RESEND_API_KEY y RESEND_FROM_EMAIL. Usa el enlace de abajo.",
+  },
+  "E-mail não enviado: o domínio do remetente não está verificado no Resend. Use o link abaixo.": {
+    es: "Correo no enviado: el dominio del remitente no está verificado en Resend. Usa el enlace de abajo.",
+  },
+  "E-mail não enviado: o provedor atingiu o limite de envio. Tente de novo em instantes ou use o link abaixo.": {
+    es: "Correo no enviado: el proveedor alcanzó el límite de envío. Inténtalo de nuevo en unos instantes o usa el enlace de abajo.",
+  },
+  "E-mail não enviado: o provedor recusou o envio (chave inválida ou remetente incorreto). Use o link abaixo.": {
+    es: "Correo no enviado: el proveedor rechazó el envío (clave inválida o remitente incorrecto). Usa el enlace de abajo.",
+  },
+  "E-mail não enviado. Use o link abaixo para passar o convite por outro canal.": {
+    es: "Correo no enviado. Usa el enlace de abajo para enviar la invitación por otro canal.",
+  },
   "Nenhuma capacidade disponível ainda para esta jornada.": {
     es: "Todavía no hay capacidades disponibles para esta jornada.",
   },

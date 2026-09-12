@@ -24,8 +24,44 @@ import { ROLES, type Role } from "@/lib/schemas/team";
 import { descreverMotivoDaFalha } from "./motivo-da-falha";
 
 interface ResultState {
-  sent: Array<{ email: string; accept_url: string; email_dispatched: boolean; expires_at: string }>;
+  sent: Array<{
+    email: string;
+    accept_url: string;
+    email_dispatched: boolean;
+    email_error?: string | null;
+    expires_at: string;
+  }>;
   failed: Array<{ email: string; reason: string }>;
+}
+
+/**
+ * O que dizer quando o e-mail não saiu.
+ *
+ * A mensagem era uma só — "Resend não configurado — link copiável abaixo
+ * (DEV)" — para qualquer causa, e errava em três frentes ao mesmo tempo: dizia
+ * NÃO CONFIGURADO a quem tinha a chave configurada e inválida (medido nesta
+ * instalação: `{"statusCode":400,"message":"API key is invalid"}`), sugeria com
+ * o "(DEV)" que aquilo era coisa de ambiente de desenvolvimento enquanto
+ * acontecia em produção, e não dizia o que fazer. O motivo já existia
+ * classificado em `sendEmail` e morria no caminho.
+ *
+ * O link de aceite continua na tela em todos os casos: ele é a saída imediata,
+ * e mandar o convite pelo WhatsApp enquanto o e-mail não volta é trabalho que
+ * quem opera consegue fazer sozinho.
+ */
+function motivoDoNaoEnvio(erro: string | null | undefined, t: (s: string) => string): string {
+  switch (erro) {
+    case "not_configured":
+      return t("E-mail não enviado: falta configurar RESEND_API_KEY e RESEND_FROM_EMAIL. Use o link abaixo.");
+    case "dominio_nao_verificado":
+      return t("E-mail não enviado: o domínio do remetente não está verificado no Resend. Use o link abaixo.");
+    case "rate_limited":
+      return t("E-mail não enviado: o provedor atingiu o limite de envio. Tente de novo em instantes ou use o link abaixo.");
+    case "send_failed":
+      return t("E-mail não enviado: o provedor recusou o envio (chave inválida ou remetente incorreto). Use o link abaixo.");
+    default:
+      return t("E-mail não enviado. Use o link abaixo para passar o convite por outro canal.");
+  }
 }
 
 export function InviteForm() {
@@ -126,9 +162,7 @@ export function InviteForm() {
                     <li key={s.email} className="rounded-md border p-2">
                       <div className="font-medium">{s.email}</div>
                       <div className="text-xs text-muted-foreground">
-                        {s.email_dispatched
-                          ? t("Email enviado.")
-                          : t("Resend não configurado — link copiável abaixo (DEV).")}
+                        {s.email_dispatched ? t("Email enviado.") : motivoDoNaoEnvio(s.email_error, t)}
                       </div>
                       {!s.email_dispatched ? (
                         <code className="mt-1 block text-xs break-all">{s.accept_url}</code>

@@ -513,6 +513,47 @@ export class WahaClient {
   }
 
   /**
+   * Os dois tiques azuis no aparelho de quem escreveu.
+   *
+   * ─── Por que isto não existia ─────────────────────────────────────────────
+   *
+   * `sendSeen` não tinha uma única ocorrência no repositório. A consequência,
+   * relatada e confirmada: o cliente manda mensagem, o agente RESPONDE, e a
+   * mensagem dele segue marcada como não lida no WhatsApp. Para quem está do
+   * outro lado isso lê como desatenção — recebeu resposta de alguém que
+   * aparentemente nem abriu o que ele escreveu.
+   *
+   * ─── Best-effort, e de propósito ──────────────────────────────────────────
+   *
+   * Nunca lança. Marcar como lido é cortesia; ENVIAR é o trabalho. Se este
+   * POST falhar (WAHA reiniciando, sessão trocando de estado, versão sem a
+   * rota), a resposta ao cliente não pode cair junto — seria trocar um defeito
+   * cosmético por um funcional. O erro vira log e o envio segue.
+   */
+  async sendSeen(session: string, chatId: string, messageId?: string | null): Promise<void> {
+    try {
+      const res = await this.fetchComTeto(`${this.baseUrl}/api/sendSeen`, {
+        method: "POST",
+        headers: {
+          "X-Api-Key": this.apiKey,
+          "Content-Type": "application/json",
+        },
+        // `messageId` só entra quando existe, pelo mesmo motivo do `reply_to`
+        // em `sendMessage`: mandar `null` é pedir para a API interpretar nada.
+        body: JSON.stringify({ session, chatId, ...(messageId ? { messageId } : {}) }),
+      });
+      if (!res.ok) {
+        logger.warn("[waha] sendSeen recusado", { status: res.status, session });
+      }
+    } catch (err) {
+      logger.warn("[waha] sendSeen falhou", {
+        erro: err instanceof Error ? err.name : "desconhecido",
+        session,
+      });
+    }
+  }
+
+  /**
    * O "digitando…" (e o "gravando…") no aparelho do cliente.
    *
    * ─── O contrato, e por que ele é diferente do resto deste arquivo ─────────
