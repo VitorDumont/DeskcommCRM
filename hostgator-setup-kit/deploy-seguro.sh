@@ -38,18 +38,29 @@ verde()    { printf '\033[32m%s\033[0m\n' "$*"; }
 # ficaria sem caminho de atualização quando mais precisa dele.
 if [ "$CONFERIR_CI" = "1" ]; then
   sha="$(git rev-parse HEAD 2>/dev/null || true)"
-  if command -v gh >/dev/null 2>&1 && [ -n "$sha" ]; then
-    estado="$(gh api "repos/VitorDumont/DeskcommCRM/actions/runs?head_sha=$sha&per_page=20" \
-      --jq '[.workflow_runs[] | select(.name=="ci")][0].conclusion' 2>/dev/null || echo "")"
-    case "$estado" in
-      success) verde "✓ ci verde em ${sha:0:8}" ;;
-      failure) vermelho "✗ o ci REPROVOU em ${sha:0:8} — abortando"
-               vermelho "  use --sem-ci se souber o que está fazendo"; exit 1 ;;
-      *)       vermelho "⚠ ci em '${estado:-desconhecido}' — seguindo mesmo assim" ;;
-    esac
-  else
-    vermelho "⚠ sem gh/sha para conferir o ci — seguindo"
+  # `curl` na API pública, e não `gh`: a VM não tem o gh instalado (conferido), e
+  # o repositório é público — ler runs não pede autenticação. Instalar o gh na
+  # VPS do cliente para conferir um status seria pedir dependência nova ao
+  # operador, que é justamente o que a doutrina de packaging não quer.
+  estado=""
+  if [ -n "$sha" ]; then
+    estado="$(curl -fsS --max-time 15 \
+      "https://api.github.com/repos/VitorDumont/DeskcommCRM/actions/runs?head_sha=${sha}&per_page=20" 2>/dev/null \
+      | python3 -c 'import json,sys
+try:
+    runs = json.load(sys.stdin).get("workflow_runs", [])
+except Exception:
+    print(""); raise SystemExit
+ci = [r for r in runs if r.get("name") == "ci"]
+print(ci[0].get("conclusion") or "em_andamento" if ci else "")' 2>/dev/null || echo "")"
   fi
+  case "$estado" in
+    success) verde "✓ ci verde em ${sha:0:8}" ;;
+    failure) vermelho "✗ o ci REPROVOU em ${sha:0:8} — abortando"
+             vermelho "  use --sem-ci se souber o que está fazendo"; exit 1 ;;
+    "")      vermelho "⚠ não consegui falar com o GitHub — seguindo sem conferir o ci" ;;
+    *)       vermelho "⚠ ci em '${estado}' — seguindo mesmo assim" ;;
+  esac
 fi
 
 # ── 2. A rede: de onde voltar ────────────────────────────────────────────────
