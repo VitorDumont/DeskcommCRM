@@ -70,13 +70,33 @@ export async function irParaASemanaSeguinte(page: Page): Promise<string[]> {
     "a grade não desenhou dia nenhum — a tela da agenda não chegou a montar",
   ).toBeAttached({ timeout: 25_000 });
   const antes = await diasDesenhados(page);
+  // O RÓTULO do período, lido antes do clique. Ele é o estado — `setAncora`
+  // o muda no mesmo tick —, enquanto as colunas são o EFEITO: elas só repintam
+  // depois que `useHorariosLivres` refaz a busca do recorte novo.
+  const rotuloAntes = (await page.getByTestId("periodo").textContent())?.trim() ?? "";
 
   await page.getByTestId("periodo-seguinte").click();
 
+  // Primeiro o estado. Se ele não muda, o clique não pegou — e a falha diz
+  // isso, em vez de "a grade não repintou", que culpa a busca por um botão que
+  // não foi apertado. Medir só o efeito confunde as duas causas, e foi o que
+  // este helper fazia: quatro runs seguidos reprovaram aqui com a mensagem da
+  // grade enquanto a pergunta em aberto era qual das duas falhou.
+  await expect
+    .poll(async () => (await page.getByTestId("periodo").textContent())?.trim() ?? "", {
+      timeout: 10_000,
+      message: "o clique em `periodo-seguinte` não mudou o período — o botão não respondeu",
+    })
+    .not.toBe(rotuloAntes);
+
+  // Depois o efeito, com folga: a busca de horários livres atravessa a rede do
+  // runner, e nele o Redis cai para o contador em memória sob carga — o que
+  // alarga a cauda sem que nada esteja errado no produto.
   await expect
     .poll(async () => (await diasDesenhados(page))[0] ?? "", {
-      timeout: 20_000,
-      message: "a grade não trocou de semana depois do clique em `periodo-seguinte`",
+      timeout: 30_000,
+      message:
+        "o período mudou, mas a grade não repintou: a busca de horários livres do recorte novo não voltou",
     })
     .not.toBe(antes[0] ?? "");
 
