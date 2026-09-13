@@ -25,6 +25,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
+import { avaliarSessoesWaha } from "@/lib/waha/saude-das-sessoes";
 import { alvoDe, classificarFalhaDeAlcance, type FalhaDeAlcance } from "@/lib/net/alcance";
 import { validarConfigRedisRest } from "@/lib/redis-config";
 
@@ -39,7 +40,9 @@ type MotivoDeFalha =
   | "credencial_recusada"
   | "resposta_inesperada"
   | "nao_configurado"
-  | "configuracao_invalida";
+  | "configuracao_invalida"
+  /** O WAHA respondeu, e NENHUMA sessão do WhatsApp está pareada e atendendo. */
+  | "sessao_desconectada";
 
 type Check = {
   status: CheckStatus;
@@ -48,6 +51,12 @@ type Check = {
   reason?: MotivoDeFalha;
   /** Protocolo + host + porta que tentamos. Só com `?verbose=1` autenticado. */
   target?: string;
+  /** Quantas sessões do WhatsApp o WAHA conhece. Só no check `waha`. */
+  sessoes?: number;
+  /** Quantas delas estão pareadas e atendendo. Só no check `waha`. */
+  trabalhando?: number;
+  /** Os estados vistos, sem identificar sessão. Só quando nenhuma trabalha. */
+  estados?: string;
 };
 
 const TIMEOUT_MS = 3_000;
@@ -192,7 +201,22 @@ async function checkWaha(): Promise<Check> {
         target: alvoDe(base),
       };
     }
-    return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(base) };
+    // 200 aqui prova que o contêiner responde e que a API key confere — e não
+    // prova que o número está pareado. Com a sessão caída (`FAILED`,
+    // `SCAN_QR_CODE`) o WAHA segue devolvendo 200, o health dizia `healthy`, e
+    // o alerta de uptime — que exige essa palavra no corpo — nunca tocava. O
+    // canal principal parava em silêncio. Regras e limites em
+    // `lib/waha/saude-das-sessoes.ts`.
+    const sessoes = avaliarSessoesWaha(await res.json().catch(() => null));
+    return {
+      status: sessoes.status,
+      latency_ms: Date.now() - t0,
+      target: alvoDe(base),
+      sessoes: sessoes.sessoes,
+      trabalhando: sessoes.trabalhando,
+      ...(sessoes.estados ? { estados: sessoes.estados } : {}),
+      ...(sessoes.status === "degraded" ? { reason: "sessao_desconectada" as const } : {}),
+    };
   } catch (e) {
     return {
       status: "down",
@@ -261,16 +285,63 @@ function semAlvo(check: Check): Check {
   return error === undefined ? resto : { ...resto, error: "erro_ao_consultar" };
 }
 
+/**
+ * O worker está processando a fila?
+ *
+ * Ele é quem tira o job da fila e faz o agente responder. O healthcheck que o
+ * compose já tinha só o Docker enxergava: com o worker morto, este endpoint
+ * seguia `healthy` — app de pé, banco de pé, WhatsApp pareado — e ninguém era
+ * atendido. É o mesmo silêncio da sessão caída, por outro caminho.
+ *
+ * `WORKER_HEALTH_URL` vazia DESLIGA o check, e o desligado não entra na conta
+ * do status: quem roda o app sozinho em desenvolvimento não precisa carregar um
+ * degradado permanente na tela por não ter subido o worker.
+ */
+async function checkWorker(): Promise<Check | null> {
+  const url = env.WORKER_HEALTH_URL?.trim();
+  if (!url) return null;
+  const t0 = Date.now();
+  try {
+    const res = await withTimeout(fetch(url, { cache: "no-store" }));
+    if (!res.ok) {
+      return {
+        status: "down",
+        latency_ms: Date.now() - t0,
+        error: `http_${res.status}`,
+        reason: motivoDoStatusHttp(res.status),
+        target: alvoDe(url),
+      };
+    }
+    return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
+  } catch (e) {
+    return {
+      status: "down",
+      latency_ms: Date.now() - t0,
+      error: e instanceof Error ? e.message : String(e),
+      reason: classificarFalhaDeAlcance(e),
+      target: alvoDe(url),
+    };
+  }
+}
+
 export async function GET(req: NextRequest) {
-  const [supabase, redis, waha] = await Promise.all([
+  const [supabase, redis, waha, worker] = await Promise.all([
     checkSupabase(),
     checkRedis(),
     checkWaha(),
+    checkWorker(),
   ]);
 
   const verboso = req.nextUrl.searchParams.get("verbose") === "1" && segredoInternoConfere(req);
   const filtrar = verboso ? (c: Check) => c : semAlvo;
-  const checks = { supabase: filtrar(supabase), redis: filtrar(redis), waha: filtrar(waha) };
+  const checks = {
+    supabase: filtrar(supabase),
+    redis: filtrar(redis),
+    waha: filtrar(waha),
+    // Ausente quando o check está desligado — e ausente não conta para o status,
+    // porque `Object.values` não vê o que não está lá.
+    ...(worker ? { worker: filtrar(worker) } : {}),
+  };
 
   const anyDown = Object.values(checks).some((c) => c.status === "down");
   const anyDegraded = Object.values(checks).some((c) => c.status === "degraded");

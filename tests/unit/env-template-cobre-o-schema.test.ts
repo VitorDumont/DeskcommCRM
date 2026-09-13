@@ -16,6 +16,15 @@
  *
  * O teste conta COMENTADA como presente: `# FOO=` documenta a variável sem
  * forçar valor, que é o jeito certo de mostrar um opcional.
+ *
+ * ## Por que não basta o `env-example-sync.test.ts` que já existia
+ *
+ * Aquele cobre só o `.env.example` e exige a chave DESCOMENTADA. São duas
+ * lacunas, e a divergência de 10 variáveis morava exatamente nelas: o arquivo
+ * que o `install.sh` copia para a VPS é o `.env.hostgator.example`, e ninguém
+ * o comparava com o schema. Os dois testes convivem porque medem coisas
+ * diferentes — aquele garante que o template de DEV traz a chave pronta para
+ * preencher; este, que nenhum dos dois esconde uma variável que existe.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";

@@ -138,6 +138,20 @@ const schema = z.object({
 
   // WAHA
   WAHA_API_BASE_URL: required("WAHA_API_BASE_URL"),
+  /**
+   * Onde o WORKER responde saúde, para o `/api/v1/health` poder perguntar.
+   *
+   * O worker é quem processa a fila e faz o agente responder. Ele já tem
+   * healthcheck próprio no compose, e esse healthcheck só o Docker via: se o
+   * worker morresse, `/api/v1/health` seguia `healthy` — app de pé, banco de
+   * pé, WhatsApp pareado — e ninguém era atendido. Silêncio idêntico ao de uma
+   * sessão caída, por outro caminho.
+   *
+   * Default é o nome do serviço na rede do compose, que é onde ele está em toda
+   * instalação padrão. Vazio DESLIGA o check — é o que usa quem roda o app
+   * sozinho em desenvolvimento e não quer um degradado permanente na tela.
+   */
+  WORKER_HEALTH_URL: z.string().optional().default("http://worker:8787/healthz"),
   WAHA_API_KEY: required("WAHA_API_KEY"),
   WAHA_WEBHOOK_BASE_URL: required("WAHA_WEBHOOK_BASE_URL"),
   // Segredo com que o WAHA assina os webhooks. O compose já o entrega ao
