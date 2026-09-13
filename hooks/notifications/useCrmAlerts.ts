@@ -1,10 +1,15 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 
 import { useActiveOrg, useUser } from "@/hooks/auth/AuthProvider";
 import { useRealtimeChannel } from "@/hooks/realtime/useRealtimeChannel";
 import { entregarAviso } from "@/lib/notifications/deliver";
+import {
+  decidirAvisosDeLead,
+  type MemoriaDoLead,
+  type TipoDeAvisoDeLead,
+} from "@/lib/notifications/avisos-de-lead";
 import { mencaoAtingeUsuario } from "@/lib/notifications/mentions";
 
 function str(v: unknown): string | null {
@@ -28,49 +33,49 @@ function sides(payload: unknown): {
   };
 }
 
+const TITULO_DO_AVISO: Record<TipoDeAvisoDeLead, string> = {
+  lead_assigned: "Lead atribuído a você",
+  lead_won: "Lead ganho",
+  lead_lost: "Lead perdido",
+};
+
 export function useCrmAlerts(): void {
   const orgId = useActiveOrg()?.orgId ?? null;
   const user = useUser();
+  /**
+   * O que esta aba já viu de cada lead. Existe porque `crm_leads` está com
+   * REPLICA IDENTITY default e o `old` do Realtime chega só com a PK — a
+   * decisão inteira, e o porquê de não ligar FULL, está em
+   * `lib/notifications/avisos-de-lead.ts`.
+   */
+  const memoriaDosLeads = useRef<Map<string, MemoriaDoLead>>(new Map());
 
   const onLead = useCallback(
     (payload: unknown) => {
       const { novo, antigo } = sides(payload);
       if (!novo) return;
+      const id = str(novo.id);
+      if (!id) return;
+
+      const { avisos, memoria } = decidirAvisosDeLead({
+        novo,
+        antigo,
+        userId: user.id,
+        memoria: memoriaDosLeads.current.get(id),
+      });
+      memoriaDosLeads.current.set(id, memoria);
+      if (avisos.length === 0) return;
+
       const title = str(novo.title) || "Lead";
       const pipelineId = str(novo.pipeline_id);
       const href = pipelineId ? `/app/pipelines/${pipelineId}` : "/app/kanban";
-      const owner = str(novo.owner_user_id);
-      const ownerAntes = str(antigo?.owner_user_id);
-      const status = str(novo.status);
-      const statusAntes = str(antigo?.status);
-
-      if (owner && owner === user.id && owner !== ownerAntes) {
+      for (const aviso of avisos) {
         entregarAviso({
-          category: "lead_assigned",
-          kind: "lead_assigned",
-          title: "Lead atribuído a você",
+          category: aviso,
+          kind: aviso,
+          title: TITULO_DO_AVISO[aviso],
           body: title,
-          tag: str(novo.id) ?? undefined,
-          href,
-        });
-      }
-      if (owner === user.id && status === "won" && statusAntes !== "won") {
-        entregarAviso({
-          category: "lead_won",
-          kind: "lead_won",
-          title: "Lead ganho",
-          body: title,
-          tag: str(novo.id) ?? undefined,
-          href,
-        });
-      }
-      if (owner === user.id && status === "lost" && statusAntes !== "lost") {
-        entregarAviso({
-          category: "lead_lost",
-          kind: "lead_lost",
-          title: "Lead perdido",
-          body: title,
-          tag: str(novo.id) ?? undefined,
+          tag: id,
           href,
         });
       }
