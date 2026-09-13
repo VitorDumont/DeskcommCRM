@@ -326,6 +326,17 @@ Duas armadilhas irmãs, as duas pagas no mesmo dia:
   divergência falsa: `2 failed` de arquivos contra `7` de casos parece defeito
   da sonda e é só régua trocada.)
 
+**Node 24 reprova 11 casos que o CI aprova — use Node 22.** `tests/unit/leads-import-route.test.ts`
+passa (14/14) em Node 22 e falha em 11 casos em Node 24, todos com a rota devolvendo `422` no
+lugar do esperado. Não é defeito do código: o CI, o `.nvmrc` e os três Dockerfiles usam **22**,
+e era o `engines` que mentia — dizia `>=22`, o que ACEITA o 24. Hoje diz `22.x`. Se você chegou
+aqui com um vermelho local que o CI não reproduz, confira `node -v` ANTES de caçar o bug:
+
+```bash
+node -v            # tem de ser v22.x
+nvm use            # o .nvmrc já diz qual
+```
+
 **Vermelho local que NÃO é seu:** `lib/ai/dispatcher/rate-limit.test.ts` falha em 5 casos, com
 15s de timeout cada, quando o `.env.local` tem `UPSTASH_REDIS_REST_URL`/`TOKEN` e o Redis para o
 qual eles apontam **não está de pé** (neste repo é o `serverless-redis-http` local, não a nuvem).
