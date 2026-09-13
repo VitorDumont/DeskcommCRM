@@ -296,6 +296,20 @@ function semAlvo(check: Check): Check {
  * `WORKER_HEALTH_URL` vazia DESLIGA o check, e o desligado não entra na conta
  * do status: quem roda o app sozinho em desenvolvimento não precisa carregar um
  * degradado permanente na tela por não ter subido o worker.
+ *
+ * ## `degraded`, nunca `down` — e isto foi medido
+ *
+ * A primeira versão devolvia `down`, que faz o status geral virar `unhealthy` e
+ * a rota responder **503**. Em produção, no primeiro deploy: o `up -d` recria
+ * app e worker juntos, o worker leva ~30s para subir, e nessa janela o health
+ * anunciava o site inteiro como fora do ar. Quem lê 503 — proxy, uptime check,
+ * balanceador — tira a instância de serviço; o remédio derrubava o site a cada
+ * deploy para avisar de algo que se conserta sozinho em meio minuto.
+ *
+ * `degraded` diz a verdade com a gravidade certa: o app SERVE (a interface
+ * abre, o histórico é lido, o humano responde pelo inbox), e o que não roda é o
+ * atendimento automático. Continua saindo do `healthy`, então o alerta de
+ * uptime — que exige essa palavra no corpo — toca igual.
  */
 async function checkWorker(): Promise<Check | null> {
   const url = env.WORKER_HEALTH_URL?.trim();
@@ -305,7 +319,7 @@ async function checkWorker(): Promise<Check | null> {
     const res = await withTimeout(fetch(url, { cache: "no-store" }));
     if (!res.ok) {
       return {
-        status: "down",
+        status: "degraded",
         latency_ms: Date.now() - t0,
         error: `http_${res.status}`,
         reason: motivoDoStatusHttp(res.status),
@@ -315,7 +329,7 @@ async function checkWorker(): Promise<Check | null> {
     return { status: "ok", latency_ms: Date.now() - t0, target: alvoDe(url) };
   } catch (e) {
     return {
-      status: "down",
+      status: "degraded",
       latency_ms: Date.now() - t0,
       error: e instanceof Error ? e.message : String(e),
       reason: classificarFalhaDeAlcance(e),
