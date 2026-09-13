@@ -89,14 +89,14 @@ export async function irParaASemanaSeguinte(page: Page): Promise<string[]> {
     })
     .not.toBe(rotuloAntes);
 
-  // Depois o efeito, com folga: a busca de horários livres atravessa a rede do
-  // runner, e nele o Redis cai para o contador em memória sob carga — o que
-  // alarga a cauda sem que nada esteja errado no produto.
+  // Depois o efeito. Ficou em 20s, o valor de sempre: subir para 30s foi
+  // tentado e reprovou igual, com o dobro do tempo — então a causa não é folta
+  // de folga, e deixar o teto alto só faria cada reprovação custar mais caro.
   await expect
     .poll(async () => (await diasDesenhados(page))[0] ?? "", {
-      timeout: 30_000,
+      timeout: 20_000,
       message:
-        "o período mudou, mas a grade não repintou: a busca de horários livres do recorte novo não voltou",
+        "o período mudou, mas a grade não repintou: a busca de horários livres do recorte novo não voltou (20s)",
     })
     .not.toBe(antes[0] ?? "");
 
