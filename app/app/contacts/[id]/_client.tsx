@@ -104,8 +104,10 @@ export function ContactDetailClient({ contactId }: Props) {
             {contact.is_anonymized && <Badge variant="destructive">{t("Anonimizado")}</Badge>}
           </div>
         </div>
+        {/* `flex-wrap` pelo mesmo motivo do header da LISTA: aqui são dois botões
+            e ainda cabem, mas foi o terceiro que quebrou a outra tela. */}
         {!contact.is_anonymized && user.support?.access_mode !== "support_readonly" && (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <DialButton contactId={contactId} hasPhone={!!contact.phone_number} />
             <Button variant="outline" onClick={() => setEditOpen(true)} className="shrink-0">
               <PencilSimple size={16} weight="bold" aria-hidden />

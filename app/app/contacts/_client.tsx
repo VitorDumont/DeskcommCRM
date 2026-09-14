@@ -89,11 +89,23 @@ export function ContactsListClient() {
           </p>
         </div>
         {/*
-          A estrutura é a da main (o "Importar CSV" do PR #313); o `shrink-0`
-          vem do PR #267, e vale para os DOIS botões agora: numa tela de 390px
-          uma linha de dois botões sem isso comprime os rótulos.
+          `flex-wrap`, e NÃO `shrink-0`.
+          
+          O `shrink-0` veio do PR #267, quando eram DOIS botões: sem ele, numa
+          tela de 390px a linha comprimia os rótulos. Aí o PR #313 acrescentou o
+          terceiro ("Importar CSV") e o remédio virou o defeito — `shrink-0`
+          proíbe encolher, três botões não cabem em 390px, e o que era compressão
+          virou CORTE. Medido na produção, no iPhone de 390px: a caixa tinha
+          294px e o conteúdo 423px, e os 129px que sobravam levavam justamente o
+          "Novo contato", a ação primária da tela, para fora do vidro — some
+          calada, porque um ancestral tem `overflow-x: hidden`.
+
+          `flex-wrap` resolve os dois de uma vez: não comprime rótulo (era o que
+          o `shrink-0` protegia) e não corta, porque quebra a linha. Medido
+          depois: 129px de excesso viraram 0, e os três botões ficaram dentro.
+          Acrescentar um quarto botão um dia passa a ser seguro.
         */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/*
             A porta do recurso de duplicados fica AQUI, na tela que já existe, e
             não num item de menu novo: quem descobre que tem contato repetido
