@@ -174,6 +174,23 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
       const res = await apiClient.post<TestResponse>(
         `/api/v1/ai/agents/${agent.id}/versions/${target.id}/test`,
         body,
+        // O teto do cliente é 10s (`DEFAULT_TIMEOUT_MS`), e um turno de agente
+        // NÃO cabe em 10s: ele encadeia várias chamadas de modelo — classificar
+        // etapa, detectar jailbreak, o turno em si, promessa semântica,
+        // checkpoint. Medido nesta instalação, com Sonnet 5: `agent_preview`
+        // sozinho levou 19,3s e 32,2s em duas execuções, e o turno inteiro
+        // passou de 35s.
+        //
+        // Com o default, o `fetch` era abortado ANTES de a resposta chegar
+        // TODA vez, com qualquer provedor e qualquer modelo — o teste do agente
+        // não tinha como passar. O run ficava preso em `running` (o handler
+        // morre antes de gravar o desfecho) e a tela dizia "Erro inesperado",
+        // porque `TimeoutError` não é `ApiError` e caía no ramo genérico.
+        //
+        // 180s dá folga ao pior caso medido e ainda cabe com sobra nos 320s de
+        // `read_timeout`/`write_timeout` do Caddyfile — passar disso seria
+        // trocar um timeout do cliente por um do proxy, com mensagem pior.
+        { timeoutMs: 180_000 },
       );
       setResult(res.data);
       qc.invalidateQueries({ queryKey: agentRunsKey(agent.id) });
@@ -181,6 +198,12 @@ export function TestPanel({ agent, draft, published, readOnly }: Props) {
     } catch (err) {
       if (err instanceof ApiError) {
         toast.error(t(err.message) || `${t("Erro")}: ${err.code}`);
+      } else if (err instanceof Error && err.name === "TimeoutError") {
+        // Distinguir do genérico importa: timeout aqui quase nunca é "o sistema
+        // quebrou", é o turno sendo longo mesmo — e o conselho é outro.
+        toast.error(
+          t("O teste passou de 3 minutos e foi interrompido. Um agente com muitas capacidades ligadas demora mais; tente desligar as que não usa."),
+        );
       } else {
         toast.error(t("Erro inesperado."));
       }

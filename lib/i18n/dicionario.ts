@@ -789,6 +789,9 @@ export const DICIONARIO: Traducoes = {
   Modelo: { es: "Modelo" },
   "Selecione um modelo": { es: "Selecciona un modelo" },
   "Nenhum modelo disponível": { es: "Ningún modelo disponible" },
+  "O teste passou de 3 minutos e foi interrompido. Um agente com muitas capacidades ligadas demora mais; tente desligar as que não usa.": {
+    es: "La prueba superó los 3 minutos y fue interrumpida. Un agente con muchas capacidades activadas tarda más; prueba a desactivar las que no uses.",
+  },
   "E-mail não enviado: falta configurar RESEND_API_KEY e RESEND_FROM_EMAIL. Use o link abaixo.": {
     es: "Correo no enviado: falta configurar RESEND_API_KEY y RESEND_FROM_EMAIL. Usa el enlace de abajo.",
   },
